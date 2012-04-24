@@ -1,0 +1,101 @@
+Changes in Version 0.4:
+
+FIXES:
+- Several text-out bugs fixed (including the 'File not found' 
+  errors when recording an audio cd)
+- Grabbing audio cd works for devices other than /dev/cdrom
+- Unknown configfile options (including typos) are displayed
+- Options in configfile including whitespaces didn't work
+  (important for oggencopts and lameopts), they do now
+NEW FEATURES:
+- Clear view through colored text output
+- When mpg123 is not installed, but mpg321 is, this tool is automatically used
+- You can print Cd Inlays for a directory with audiofiles, 
+  without having to record it as cd
+- new config option: autoeject=<yes|no>  (eject cds automatically after recording)
+- Multiple parameters for files and directories are possible now. this
+  also allows the use of wildcards like: texburn *.mp3
+
+Changes in Version 0.3:
+
+FIXES:
+- Cd grabbing and copying does now work for cds with a size 
+  bigger than 650 mb (automatic check for blocksize & blockcount)
+NEW FEATURES:
+- optional cd-inlay printing for audio cds
+  (new config option: inlay=<yes|no|ask>
+- new config option: cdrdaoopts
+
+Changes in Version 0.2e:
+
+FIXES:
+- burning bin/cue REALLY works now o_O
+NEW FEATURES:
+- new config option: burnproof=<yes|no>
+
+Changes in Version 0.2d:
+
+FIXES:
+- burning directory as audio cd works again
+NEW FEATURES:
+- n/a
+
+Changes in Version 0.2c:
+
+FIXES:
+- default temp path edited
+- README File rewritten (thanks to Christoph Ehrlich)
+NEW FEATURES:
+- n/a
+
+Changes in Version 0.2b:
+
+FIXES:
+- bin/cue burning works
+- burning of single audio files as audio cd works again
+- audiofile-detection works
+NEW FEATURES:
+- n/a
+
+Changes in Version 0.2:
+
+FIXES:
+- ripping audio cds as ogg does work now.
+- renaming of audio files when ripping soundtracks or compilations
+  works now.
+- writing of single audiofiles as audio cd works now.
+- output of cdrecord is not suppressed any more
+  also, the command line that is going to be executed is echoed
+- output of cdrecord will aditionally be logged in /var/log/texburn.log
+  (not in the local directory any more)
+- you'll be able to view the help (-h|--help|help) without having a config
+  file now and without being root
+- added lockfile support. when starting a second instance of texburn while
+  recording a cd, your data won't be lost any more 
+- giving a relative path as parameter works now.
+- when burning succeeded, you'll get the message "thank you for using texburn",
+  otherwise a simple "Quitting."
+- fixed a typo in the readme file (i always wanted to put THAT in a changelog)
+  of course it's "stratovarius", not "strattovarius" :)
+NEW FEATURES:
+- pressing ctrl+c is trapped now. if you hit it accidentially, it's no problem,
+  you have to press it twice now to kill the process.
+- new config option: pad=<yes|no>
+  define, if you want to use -pad or -dao when burning audio cds
+  (see cdrecord manpage for details)
+- new config option: forcetools=<yes|no>
+  if set to `yes', it will disable the check for the required tools.
+  it's recommended that you keep this value on `no'.
+- new commandline option: -v|--version|version: displays the programs version.
+
+Changes in Version 0.1b:
+
+FIXES:
+- burning should work now ;)
+  this was about wrong quotation marks
+- audio cd ripping should not produce the double amount of songs any more.
+  same thing, quotation marks again
+- ripoutput is read now
+  a typo in config parsing
+NEW FEATURES:
+- n/a

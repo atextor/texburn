@@ -1,0 +1,171 @@
+#################################
+# texburn 0.2e
+# README file
+#################################
+
+
+1) Why _another_ burning frontend??
+############################################################
+
+texburn is for console freaks. But for those that love comfort ;)
+It is all without fancy menus and you don't have to use a mouse
+to click yourself through endless dialogs.
+The program was designed to work as automatic as possible.
+It should do the work, not you.
+
+You just type e.g. "texburn grab audio" and it rips your cd and renames the tracks accordingly via cddb,
+or "texburn copy" to copy a cd,
+or "texburn /archive/music/metal/stratovarius/elements" to burn the oggs or mp3s within that directory directly as an audio cd.
+
+It's just simple as that.
+
+
+
+2) Features
+############################################################
+
+- Suport for audio and data cds (single files, directories or ISO images)
+- Support for BIN and CUE images
+- Copy audio or data CDs
+- Blank media (CDRr or CDRWs) fast or completely
+- Rip data CDs as a directory or ISO image
+- Rip audio CDs with automatic encoding in your favorite format
+  (mp3 or ogg) and rename the tracks automatically via cddb
+- Burn pls (xmms) or m3u (winamp) playlists directly as audio cd
+- Easy-to-use interface
+- Highly configurable with the help of a config file
+- Dialog menus only when user interaction is necessary
+- Automatic detection of parameters/arguments
+
+
+
+3) Features to come
+############################################################
+
+- MultiSession support
+- Multiple parameter detection
+- Automatic conversion of videos and burning as (s)vcd ???
+
+
+
+4) Installation and required software
+############################################################
+
+To install the program, simply copy the script file 'texburn' to /usr/sbin
+(or use `make install'). Then read the README completely and create a
+config file.
+
+Please be aware that almost every required program may already be installed
+with your distribution, or is available directly from your distribution cd or
+download site. (RPMs: rpmfind.net; Debian: apt-cache search)
+The following is a list of the required software.
+
+- cdda2wav -- required for ripping audio cds (http://www.hitsquad.com/smm/programs/cdda2wav/)
+- cdrecord -- required for burning cds (http://www.fokus.gmd.de/research/cc/glone/employees/joerg.schilling/private/cdrecord.html)
+- mkisofs  -- creates ISO images (http://www.andante.org/mkisofs.html)
+- ogg123   -- decode ogg audio files (http://www.vorbis.com)
+- mpg123   -- decode mp3 audio files (http://www.mpg123.de)
+- cdrdao   -- required for burning BIN/CUE images (http://cdrdao.sourceforge.net/download.html)
+- dialog   -- user interaction
+- lame     -- encode mp3 audio files (http://lame.sourceforge.net/)
+- oggenc   -- encode ogg audio files (http://www.vorbis.com)
+- cda      -- retrieve cddb information - this programm is included in the xmcd package (http://www.downseek.com/download/3528.asp)
+
+
+
+5) Usage
+############################################################
+
+Start texburn with one parameter. This can be a file or a directory.
+Multiple paramters are _not_ supported yet (e.g. `texburn *.mp3')
+For example, the following commands are all valid and pretty much self-explanatory:
+
+texburn isoimage.img               texburn isoimage.iso
+texburn binimage.bin               texburn binimage.cue
+texburn mysong.mp3                 texburn mysong.ogg
+texburn mysong.wav                 texburn /home/me/a_data_dir
+texburn myfavoritesongs.m3u        texburn myfavoritesongs.pls
+texburn /mymusic/an_album 
+
+
+There are a few additional commands:
+
+texburn [-h|--help|help]       -- display a short help
+texburn [-h|--version|version] -- display the program version
+texburn copy                   -- display a menu: copy data or audio cd
+texburn copy [audio|audiocd]   -- copy an audio cd without user interaction necessary
+texburn copy [data|datacd]     -- copy a data cd without user interaction necessary
+texburn blank                  -- display a menu: blank a medium fast or completely
+texburn blank fast             -- blank a medium fast (recommended)
+texburn blank [all|complete]   -- blank a medium completely
+texburn grab                   -- display a menu: grab a data or an audio cd
+texburn grab [audio|audiocd]   -- grab an audio cd (set the format (ogg/mp3/wav) in the config file
+                                  (see also section 6))
+texburn grab [data|datacd]     -- display a menu to grab a cd as a directory or as an ISO image
+
+
+
+6) Configuration file
+############################################################
+
+Create a file `/etc/texburnrc' or `$HOME/.texburnrc' (should be in /root, as you have
+to log in as root to use the program).
+See the example config file for an idea how it can look like.
+
+Use the hash (#) at the _beginning_ of a line to comment that line out.
+Do not include spaces around the equal sign (type `cdrecord=/usr/bin/cdrecord', not
+`cdrecord = /usr/bin/cdrecord').
+
+
+Available config options:
+
+device=x,y,z                Set your cdrecorder SCSI device settings (chan,id,lun).
+                            Find them out using `cdrecord -scanbus' or `cat /proc/scsi/scsi'.
+
+speed=x                     Set the speed at which CDs should be recorded.
+
+cdrom=<path to device>      This is where your cdrom is located (for copying or grabbing).
+
+tempdir=<directory>         The required temp directory. Default is `/tmp/texburntemp'
+                            Expect it to require MUCH free disk space (for ISO images etc), so
+                            your /tmp partition should have enough free space available. If not,
+                            specify another directory here!
+                            WARNING: Do _NOT_ set this to your home dir (use a subdirectory!), since
+                            this directory will be rm -rf'ed automatically at program exit.
+
+ripoutput=<directory>       This is the place where grabbed CDs go (audio and data).
+
+format=<ext>                Your favorite audioformat output when using `texburn grab audio'.
+                            Can be mp3, ogg or wav.
+
+lameopts=<whatever>         The (audio quality) options when encoding mp3s using lame.
+
+oggencopts=<whatever>       The (audio quality) options when encoding oggs using oggenc.
+
+owner=tex.tex               When you rip an audio cd for example, the output will be `chown'ed
+                            afterwards. Set this to your normal user name and default group.
+
+pad=<yes|no>                If set to `yes', audio cd burning will use the -pad switch for cdrecord,
+                            `no' will use -dao. Not all cd recorders support the -dao switch, therefore
+                            the recommended value is `yes'. (See `man cdrecord' for details)
+
+forcetools=<yes|no>         If set to `yes', the check for the required tools is disabled.
+                            It is recommended that you keep this value at `no'.
+
+burnproof=<yes|no>          If set to `yes`, the support for Buffer Underrun Free writing is enabled
+                            in cdrecord. This only works for drives that support Buffer Under-
+                            run Free technology. This may be called: Sanyo BURN-Proof, Ricoh Just-Link, 
+                            Yamaha Lossless-Link or similar.
+
+
+6) Contact
+############################################################
+
+This script was written by Andreas Textor.
+If there are any bugs, feature requests or ideas, please let
+me know:
+ textor.andreas@googlemail.com
+
+Visit my website at:
+ http://kantico.de/
+

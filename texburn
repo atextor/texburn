@@ -1,0 +1,1311 @@
+#!/bin/bash
+
+#-----------------------------------------------------
+# texburn v0.4
+#-----------------------------------------------------
+# Script written by Andreas Textor
+# Contact: texray@fuckMicrosoft.com or texray@gmx.de
+# Website: http://texray.kantico.de
+#
+# Purpose: Easy-To-Use console burn- and cd-ripping 
+#          frontend without fancy menus.
+#          Use texburn -h or texburn --help or
+#          texburn help for a short overview,
+#          read the manpage for a complete instruction.
+#-----------------------------------------------------
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License
+#  as published by the Free Software Foundation; either version 2
+#  of the License, or (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+# 
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+# 
+
+#########################################
+# Initialize
+#########################################
+
+# set default settings, in case they are not
+# set in the config file
+
+# DO NOT CHANGE THESE SETTINGS!
+# INSTEAD CREATE AN OWN CONFIG FILE!
+# (see manpage)
+
+me="texburn"
+version="0.4"
+logfile="/var/log/texburn.log"
+lockfile="/tmp/.texburnlock"
+tempfile1="/tmp/burntemp$$"
+tempfile2="/tmp/burntemp2$$"
+inlayfile="/tmp/texburninlay.ps"
+cdrecord="`which cdrecord`"
+dialog="`which dialog`"
+mpg123="mpg123"
+recorder="/dev/scd1"
+speed=4
+tempdir="/tmp/$me$$"
+tempdir2="/tmp/${me}2$$"
+ripoutput="$HOME"
+format="mp3"
+forcetools="no"
+burnproof="driveropts=noburnfree"
+lameopts="-b 192"
+oggencopts="-B 16 -R 44100 -b 192"
+owner="root.root"
+cdrdaoopts=""
+pad="yes"
+inlay="yes"
+autoeject="no"
+device=0,1,0
+backtitle="$me v$version (http://texray.kantico.de)"
+dialogcols=20
+dialogrows=65
+echoline= ; for ((p=1; p<`tput cols`; p++)); do echoline="$echoline-"; done
+blankline= ; for ((p=1; p<`tput cols`; p++)); do blankline="$blankline "; done
+
+# define color constants
+C_BLACK='\033[0;30m'
+C_BLUE='\033[0;34m'
+C_LTBLUE='\033[1;34m'
+C_WHITE='\033[1;37m'
+C_RED='\033[0;31m'
+C_LTRED='\033[1;31m'
+C_GREEN='\033[0;32m'
+C_LTGREEN='\033[1;32m'
+C_PURPLE='\033[0;35m'
+C_LTPURP='\033[1;35m'
+C_YELLOW='\033[1;33m'
+C_BROWN='\033[0;33m'
+C_CYAN='\033[0;36m'
+C_LTCYAN='\033[0;36m'
+C_DKGREY='\033[1;30m'
+C_LTGREY='\033[0;37m'
+C_GRAY=$C_LTGREY
+C_OFF='\033[0m'
+
+
+#######################################
+# Functions
+#######################################
+
+function checkIdentity {
+ #
+ # Check if we are root
+ #
+ if [ $(whoami) != "root" ]; then
+  #clear
+  #dialog --backtitle "$backtitle" \
+ # 	 --msgbox "You are starting $me as a normal user. Please log in as root and start again." $dialogcols $dialogrows
+  statusOutput "+++ You are starting $me as normal user. Please log in as root and start again."
+  quit 1
+ fi
+
+}
+
+function checkTools {
+ #
+ # Check for needed tools
+ #
+ if [ $forcetools = "no" ]; then
+     for i in cdda2wav cdrecord mkisofs ogg123 mpg123 cdrdao dialog lame oggenc cda isoinfo; do
+      statusOutput "\r$blankline\rChecking for tools: $i: " "N"
+      a=`which $i`
+      if [ ! -z "$a" ]; then 
+        statusOutput "$a\r" "N"
+      else
+        if [ "$i" = "mpg123" ]; then 
+          a=`which mpg321`
+          if [ ! -z "$a" ]; then
+            statusOutput "$a (mpg123 alternative)\r" "N"
+            mpg123="mpg321"
+          fi
+        else
+          statusOutput " "
+          statusOutput "$C_LTRED Not found!"
+          statusOutput "+++ One or more required tools were not found!"
+          statusOutput "+++ Please install those programs first."
+          exit
+        fi
+      fi
+     #sleep 1
+     done
+     statusOutput "$blankline\r" "N" 
+     statusOutput "Checking for tools: all found."
+ fi
+}
+
+function checkTempDir {
+ #
+ # Check if our temp dir exists
+ # if not, create it
+ #
+  if [ ! -d $tempdir ]; then
+   mkdir -p "$tempdir"
+  fi
+  if [ ! -d $tempdir2 ]; then
+   mkdir -p "$tempdir2"
+  fi
+}
+
+function checkLockFile {
+ #
+ # Check for a lockfile,
+ # if none was found, create one
+ #
+ if [ ! -e $lockfile ]; then
+    touch $lockfile
+ fi
+}
+ 
+function displayHelp {
+ #
+ # Display Programs Help
+ #
+ cat << EOF
+texburn v$version by Andreas Textor
+Usage: texburn [file]
+   or: texburn [directory]
+   or: texburn [command]
+
+   file can be one of the following types: img, iso, mp3, wav, ogg, m3u, 
+    pls, cue, bin for automatic actions, or any other file to be recorded
+    directly as data cd.
+
+   directory can contain any of the following types: wav, mp3, ogg for 
+    automatic audio cd recording, or any other files or subdirectories
+    to be recorded directly as data cd.
+
+   command can be one of the following:
+    help, -h, --help                Show this helpscreen
+    version, -v, --version          Display the version of the program 
+    copy                            Display a menu: copy data or audio cd
+    copy audio, copy audiocd        Copy an audio cd without user interaction necessary
+    copy data, copy datacd          Copy a data cd without user interaction necessary
+    blank                           Display a menu: blck a medium fast or complete
+    blank fast                      blank a medium fast (recommended)
+    blank complete, blank all       blank a medium completely
+    grab                            Display a menu: grag a data or an audio cd
+    grab audio, grab audiocd        Grab an audio cd (set destination format in configfile)
+    grab data, grab datacd          Display a menu: Grab cd as directory or as isoimage
+     
+ For more information about the configfile and the options, please see the manpage
+ (man texburn).
+EOF
+ quit
+}
+
+function displayVersion {
+ #
+ # Display Programs Version
+ #
+ statusOutput "$me v$version"
+ quit
+}
+
+function signalHandler {
+ #
+ # If someone presses ctrl+c
+ # or tries to kill the program,
+ # it gets trapped.
+ #
+ statusOutput "+++ You pressed CTRL+C or tried to kill"
+ statusOutput "+++ the process."
+ statusOutput "+++ If you want to continue, press CTRL+C once again."
+ statusOutput "+++ All of the temporary data will be deleted."
+ trap 'quit 1' TERM INT
+}
+
+function quit {
+ # 
+ # Cleanup && Quit
+ #
+
+ # clear shit
+ checkTempDir
+ rm -rf "$tempdir"
+ rm -rf "$tempdir2"
+ for i in $tempfile1 $tempfile2 $inlayfile $lockfile; do
+  [ -e $i ] && rm $i; 
+ done 
+
+ if [ ! -z $1 ]; then
+  statusOutput "Quitting."
+  exit 1
+ else 
+  statusOutput "Thank you for using $me."
+  exit
+ fi
+}
+
+function statusOutput {
+ #
+ # Formatted Info Output
+ #
+ if [ "$2" = "N"  ] || [ "$2" = "n" ]; then
+  if [ "${1:1:1}" = '+' ]; then 
+    echo -en "$C_LTRED$1"
+   elif [ "${1:1:1}" = '-' ]; then
+    echo -en "$C_YELLOW$echoline"
+   else
+    echo -en "   $C_WHITE$1"
+   fi
+ else
+  if [ "${1:1:1}" = '+' ]; then 
+    echo -e "$C_LTRED$1"
+   elif [ "${1:1:1}" = '-' ]; then
+    echo -e "$C_YELLOW$echoline"
+   else
+    echo -e "   $C_WHITE$1"
+   fi
+ fi
+ echo -en "\033[0m" # switch color off
+}
+
+function burnDir {
+ #
+ # $1 is a directory. Find out what the
+ # contents are and burn them.
+ #
+ cd "$1"
+ audiofiles="no"
+ statusOutput "Searching for audiofiles... " "N"
+ if [ ! -z "`ls -1|grep -i mp3`" ] || [ ! -z "`ls -1|grep -i ogg`" ] || \
+    [ ! -z "`ls -1|grep -i wav`" ]; then audiofiles="yes"; fi
+ statusOutput "$audiofiles"
+
+ if [ $audiofiles = "no" ]; then
+    statusOutput "No audiofiles found in $1..."
+    statusOutput "I'll burn $1 as Data Cd."
+    burnDataDir "$1"
+ else
+    # audiofiles were found in the $1-directory.
+    # display a menu: burn the content as data cd or as audio cd.
+    $dialog --backtitle "$backtitle" \
+            --menu "What to do with the content of $1?" $dialogcols $dialogrows 3 \
+            1 "Record as Audio Cd" \
+            2 "Record as Data Cd" \
+            3 "Only print audio label" 2>$tempfile1
+   c=$(cat $tempfile1)
+   rm $tempfile1
+
+   if [ -z $c ]; then
+      statusOutput "+++ So you don't want to burn $1 after all." 
+      quit 1
+   else
+      case $c in
+      1)burnAudioDir "$1";;
+      2)burnDataDir "$1";;
+      3)createInlay "$1";;
+      esac
+   fi
+ fi
+
+}
+
+function burnDataDir {
+ #
+ # $1 is a directory.
+ # create in iso image from it an burn it.
+ #
+ checkTempDir
+ statusOutput "${C_CYAN}mkisofs -o ${tempdir}/temp.iso -R -J \"$1\""
+ mkisofs -o ${tempdir}/temp.iso -R -J "$1"
+ burnIsoImage ${tempdir}/temp.iso
+ rm ${tempdir}/temp.iso
+ quit
+}
+
+function burnAudioDir {
+ #
+ # $1 is a directory containing audio files.
+ # find out which kind, and burn an audio cd.
+ #
+ statusOutput "Burning $1 as audio cd..."
+ checkTempDir
+
+ # check if a cd-inlay should be printed
+ checkInlay "$1"
+
+ # if it isn't the tempdir already...
+ if [ "$1" != "$tempdir" ]; then
+     # copy the files to our tempdir
+     cd "$1"
+     cp *.wav *.mp3 *.ogg "$tempdir" 2>/dev/null
+ fi
+
+ cd "$tempdir"
+ 
+ # one or more files weren't found
+ # (while playlist parsing)
+ if [ "$notfound" = "yes" ]; then
+    dialog --backtitle "$backtitle" \
+ 	--yesno "On ore more files weren't found while playlist parsing. \
+    Do you still want to continue burning?" $dialogcols $dialogrows && c=true || c=false
+
+    if [ $c = "false" ]; then
+      statusOutput "+++ Playlist burning cancelled." 
+      quit 1
+    fi
+ fi
+
+ # replace spaces with underscores
+ for i in *; do mv "$i" `echo $i | tr ' ' '_'` &>/dev/null; done
+
+ # decode mp3s
+ if [ ! -z "`ls -1|grep -i mp3`" ]; then 
+   statusOutput "Decoding Mp3s..."
+   for i in *.mp3; do 
+    $mpg123 -w "${i%.*}.wav" $i 2>/dev/null; 
+    rm $i;
+   done
+ fi
+
+ # decode oggs
+ if [ ! -z "`ls -1|grep -i ogg`" ]; then 
+   statusOutput "Decoding Oggs..."
+   for i in *.ogg; do
+    ogg123 --device=wav $i 2>/dev/null;
+    mv output.wav "${i%.*}.wav";
+    rm $i;
+   done 
+ fi
+
+ # Finally start burn process
+ statusOutput "Burning $tempdir/*.wav as Audiocd..."
+ statusOutput "---"
+ statusOutput "${C_CYAN}$cdrecord $burnproof -v speed=$speed dev=$device $pad -audio $tempdir/*.wav"
+ $cdrecord $burnproof -v speed=$speed dev=$device $pad -audio $tempdir/*.wav|tee $logfile
+ ejectCd
+
+ quit
+}
+
+function checkInlay {
+ #
+ # $1 is a directory. Check for $inlay, in case of
+ # "yes" or "ask" do the necessary.
+ #
+ if [ "$inlay" = "yes" ]; then
+    createInlay "$1"
+ fi
+
+ if [ "$inlay" = "ask" ]; then
+    dialog --backtitle "$backtitle" --yesno "Create a CD-Inlay \
+    for $1?" $dialogcols $dialogrows && c=true || c=false
+
+    if [ $c = "true" ]; then
+        createInlay "$1"
+    fi
+ fi
+}
+
+function createInlay {
+ #
+ # $1 is a directory. Ask the user for the title, then 
+ # create a postscript-file with the Cd-Inlay.
+
+   $dialog --backtitle "$backtitle" \
+           --inputbox "Please type in the title for the CD-Inlay:" 20 50 2>$tempfile1
+   c=$(cat $tempfile1)
+   rm $tempfile1
+
+   # create postscript file
+cd "$1"
+cat << EOF > "$inlayfile"
+%!PS-Adobe-3.0
+%%BoundingBox: 0 0 595 842
+%%LanguageLevel: 2
+%%DocumentData: Clean7Bit
+%%Pages: (atend)
+%%PageOrder: Ascend
+%%EndComments
+%%BeginProlog
+/ISO1252Encoding [
+/.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef
+/.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef
+/.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef
+/.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef /.notdef
+/space /exclam /quotedbl /numbersign /dollar /percent /ampersand /quotesingle
+/parenleft /parenright /asterisk /plus /comma /hyphen /period /slash
+/zero /one /two /three /four /five /six /seven
+/eight /nine /colon /semicolon /less /equal /greater /question
+/at /A /B /C /D /E /F /G
+/H /I /J /K /L /M /N /O
+/P /Q /R /S /T /U /V /W
+/X /Y /Z /bracketleft /backslash /bracketright /asciicircum /underscore
+/grave /a /b /c /d /e /f /g
+/h /i /j /k /l /m /n /o
+/p /q /r /s /t /u /v /w
+/x /y /z /braceleft /bar /braceright /asciitilde /unused
+/Euro /unused /quotesinglbase /florin /quotedblbase /ellipsis /dagger /daggerdbl
+/circumflex /perthousand /Scaron /guilsinglleft /OE /unused /Zcaron /unused
+/unused /quoteleft /quoteright /quotedblleft /quotedblright /bullet /endash /emdash
+/tilde /trademark /scaron /guilsinglright /oe /unused /zcaron /Ydieresis
+/space /exclamdown /cent /sterling /currency /yen /brokenbar /section
+/dieresis /copyright /ordfeminine /guillemotleft /logicalnot /hyphen /registered /macron
+/degree /plusminus /twosuperior /threesuperior /acute /mu /paragraph /periodcentered
+/cedilla /onesuperior /ordmasculine /guillemotright /onequarter /onehalf /threequarters /questiondown
+/Agrave /Aacute /Acircumflex /Atilde /Adieresis /Aring /AE /Ccedilla
+/Egrave /Eacute /Ecircumflex /Edieresis /Igrave /Iacute /Icircumflex /Idieresis
+/Eth /Ntilde /Ograve /Oacute /Ocircumflex /Otilde /Odieresis /multiply
+/Oslash /Ugrave /Uacute /Ucircumflex /Udieresis /Yacute /Thorn /germandbls
+/agrave /aacute /acircumflex /atilde /adieresis /aring /ae /ccedilla
+/egrave /eacute /ecircumflex /edieresis /igrave /iacute /icircumflex /idieresis
+/eth /ntilde /ograve /oacute /ocircumflex /otilde /odieresis /divide
+/oslash /ugrave /uacute /ucircumflex /udieresis /yacute /thorn /ydieresis] def
+
+/psp_definefont { exch dup findfont dup length dict begin { 1 index /FID ne
+{ def } { pop pop } ifelse } forall /Encoding 3 -1 roll def
+currentdict end exch pop definefont pop } def
+
+/pathdict dup 8 dict def load begin
+/rcmd { { currentfile 1 string readstring pop 0 get dup 32 gt { exit }
+{ pop } ifelse } loop dup 126 eq { pop exit } if 65 sub dup 16#3 and 1
+add exch dup 16#C and -2 bitshift 16#3 and 1 add exch 16#10 and 16#10
+eq 3 1 roll exch } def
+/rhex { dup 1 sub exch currentfile exch string readhexstring pop dup 0
+get dup 16#80 and 16#80 eq dup 3 1 roll { 16#7f and } if 2 index 0 3
+-1 roll put 3 1 roll 0 0 1 5 -1 roll { 2 index exch get add 256 mul }
+for 256 div exch pop exch { neg } if } def
+/xcmd { rcmd exch rhex exch rhex exch 5 -1 roll add exch 4 -1 roll add
+1 index 1 index 5 -1 roll { moveto } { lineto } ifelse } def end
+/readpath { 0 0 pathdict begin { xcmd } loop end pop pop } def
+
+systemdict /languagelevel known not {
+/xshow { exch dup length 0 1 3 -1 roll 1 sub { dup 3 index exch get
+exch 2 index exch get 1 string dup 0 4 -1 roll put currentpoint 3 -1
+roll show moveto 0 rmoveto } for pop pop } def
+/rectangle { 4 -2 roll moveto 1 index 0 rlineto 0 exch rlineto neg 0
+rlineto closepath } def
+/rectfill { rectangle fill } def
+/rectstroke { rectangle stroke } def } if
+
+/psp_lzwfilter { currentfile /ASCII85Decode filter /LZWDecode filter } def
+/psp_ascii85filter { currentfile /ASCII85Decode filter } def
+/psp_lzwstring { psp_lzwfilter 1024 string readstring } def
+/psp_ascii85string { psp_ascii85filter 1024 string readstring } def
+/psp_imagedict {
+/psp_bitspercomponent { 3 eq { 1 }{ 8 } ifelse } def
+/psp_decodearray { [ [0 1 0 1 0 1] [0 255] [0 1] [0 255] ] exch get }
+def 7 dict dup
+/ImageType 1 put dup
+/Width 7 -1 roll put dup
+/Height 5 index put dup
+/BitsPerComponent 4 index psp_bitspercomponent put dup
+/Decode 5 -1 roll psp_decodearray put dup
+/ImageMatrix [1 0 0 1 0 0] dup 5 8 -1 roll put put dup
+/DataSource 4 -1 roll 1 eq { psp_lzwfilter } { psp_ascii85filter } ifelse put
+} def
+%%EndProlog
+%%Page: 0 0
+%%PageBoundingBox: 18 18 577 824
+%%BeginSetup
+%
+%%BeginFeature: *PageSize A4
+<</PageSize [595 842] /ImagingBBox null>> setpagedevice
+%%EndFeature
+%%EndSetup
+%%BeginPageSetup
+%
+gsave
+[0.24 0 0 -0.24 18 824] concat
+gsave
+%%EndPageSetup
+/Times-Roman-iso1252 /Times-Roman ISO1252Encoding psp_definefont
+500 300 moveto
+0 0 0 setrgbcolor
+/Times-Roman-iso1252  findfont 50 -90 matrix scale makefont setfont (
+EOF
+
+echo "$c" >> "$inlayfile"
+
+cat << EOF >> "$inlayfile"
+)
+show
+
+/Times-Roman-iso1252 /Times-Roman ISO1252Encoding psp_definefont
+500 380 moveto
+0 0 0 setrgbcolor
+/Times-Roman-iso1252  findfont 50 -50 matrix scale makefont setfont (
+EOF
+
+    IFS=$'\n';
+    y=380
+    for i in `ls -1`; do
+    let y=y+60;
+    echo "${i%.*})show 500 $y moveto (" >> "$inlayfile"
+    done
+
+cat << EOF >> "$inlayfile"
+) show
+
+457 185 1 1418 rectfill
+1873 185 1 1418 rectfill
+457 185 1417 1 rectfill
+457 1602 1417 1 rectfill
+showpage
+grestore grestore
+%%PageTrailer
+
+%%Trailer
+%%Pages: 1
+%%EOF
+EOF
+
+    # now print $inlayfile
+    lpr "$inlayfile"
+}
+
+function burnFile {
+ #
+ # $1 is a file. Find out what it is exactly
+ # and burn it.
+ #
+ filetype=${1##*.}
+ if [ $filetype = "mp3" -o $filetype = "wav" -o $filetype = "ogg" ]; then
+      # audio file
+      statusOutput "Detected Audiofiletype: ${1##*.}"
+
+      # Display a menu: Burn the track as Data Cd or as Audio Cd.
+      #clear
+      $dialog --backtitle "$backtitle" \
+              --menu "Burn audio $1 file as..." $dialogcols $dialogrows 2 \
+              1 "Audio Cd" \
+              2 "Data Cd" 2>$tempfile1
+     c=$(cat $tempfile1)
+     rm $tempfile1
+
+     if [ -z $c ]; then
+        statusOutput "+++ So you don't want to burn $1 after all." 
+        quit 1
+     else
+        case $c in
+        1)burnSingleAudioFile "$1";;
+        2)burnSingleDataFile "$1";;
+        esac
+     fi
+ else if [ $filetype = "img" -o $filetype = "iso" ]; then
+      # iso image
+      burnIsoImage "$1"
+ else if [ $filetype = "pls" -o $filetype = "m3u" ]; then
+      # xmms/winamp playlist
+      burnPlaylist "$1" "$filetype"
+      quit
+ else if [ $filetype = "bin" -o $filetype = "cue" ]; then
+      # bin/cue image
+      burnBin "$1" "$filetype"
+      quit
+ else
+      # data file 
+      statusOutput "Unknown Filetype: ${1##*.} (file $1)"
+      statusOutput "I'm going to create an iso-image of this file an burn it."
+      burnSingleDataFile "$1"
+      exit
+ fi; fi; fi; fi
+
+}
+
+function burnPlaylist {
+ #
+ # $1 is a playlist file (pls or m3u)
+ # $2 tells us which one
+ # create an audiocd from it
+ # 
+ checkTempDir
+ notfound=""
+
+ if [ $2 = "m3u" ]; then
+    # parse a m3u (winamp) playlist
+    IFS=$'\n'
+    statusOutput "Copying files to temp directory..."
+    for a in `grep -v "^#" $1 | grep -v '^$'`; do
+     # create a two-digit number to keep the song-order
+     ordernum=""
+     if (($i > 9)); then 
+        ordernum="$i"
+     else
+        ordernum="0$i"
+     fi
+
+     # check that it's not a shoutcast-stream
+     if [ -z `echo $a|grep -i 'http://'` ]; then
+        # check that the file exists...
+        if [ ! -e "$a" ]; then
+            statusOutput "File from playlist not found: $a"
+            notfound=yes   # will be handled in burnAudioDIr
+        else
+            cp "$a" "$tempdir/$ordernum${a##*/}"
+        fi
+     else
+        statusOutput "Ignoring shoutcast stream $a in playlist $1..."
+     fi
+     i=$[$i+1]
+    done
+    # and burn it
+    burnAudioDir "$tempdir"
+ else
+    # parse a pls (xmms) playlist
+    IFS=$'\n'
+    statusOutput "Copying files to temp directory..."
+    for a in `grep -v "^#" $1 | grep -v '^$'`; do
+     # create a two-digit number to keep the song-order
+     ordernum=""
+     if (($i > 9)); then 
+        ordernum="$i"
+     else
+        ordernum="0$i"
+     fi
+
+     if [ ! -z `echo ${a%%=*}|grep File` ]; then 
+      b=${a##*=}
+      # check that it's not a shoutcast-stream
+      if [ -z `echo $b|grep -i 'http://'` ]; then
+         # check that the file exists...
+         if [ ! -e "$b" ]; then
+             statusOutput "File from playlist not found: $b"
+             notfound=yes   # will be handled in burnAudioDIr
+         else
+             cp "$b" "$tempdir/$ordernum${b##*/}"
+         fi
+      else
+         statusOutput "Ignoring shoutcast stream $b in playlist $1..."
+      fi
+     fi
+     i=$[$i+1]
+    done
+    # and burn it
+    burnAudioDir "$tempdir"
+ fi
+}
+
+function burnBin {
+ #
+ # $1 is a .bin or .cue file
+ # $2 tells us which one
+ # just burn it...
+ #
+ if [ $2 = "cue" ]; then
+    cuefile="$1"
+ else
+    cuefile="${1%.*}.cue"
+ fi
+ statusOutput "Burning ${cuefile%.*}.bin(/img) using $cuefile..."
+ statusOutput "---"
+ statusOutput "${C_CYAN}cdrdao write $cdrdaoopts --device $device \"$cuefile\"  "
+ cdrdao write $cdrdaoopts --device $device "$cuefile" 
+ ejectCd
+
+ quit
+}
+
+function burnSingleDataFile {
+ #
+ # $1 is a file. Make an iso image from it
+ # and burn the iso.
+ #
+ checkTempDir
+ mkdir $tempdir/temp
+ cp "$1" $tempdir/temp
+ statusOutput "${C_CYAN}mkisofs -o $tempdir/temp.iso -R -J $tempdir/temp"
+ mkisofs -o $tempdir/temp.iso -R -J $tempdir/temp
+ burnIsoImage $tempdir/temp.iso
+ rm $tempdir/temp.iso
+ quit
+
+}
+
+function burnIsoImage {
+ #
+ # $1 is a iso image.
+ # burn it.
+ #
+ statusOutput "Trying to burn iso-image-file $1..."
+ statusOutput "---"
+ statusOutput "${C_CYAN}$cdrecord $burnproof -v speed=$speed dev=$device $1"
+ $cdrecord $burnproof -v speed=$speed dev=$device $1|tee $logfile
+ ejectCd
+
+ quit
+
+}
+
+function burnSingleAudioFile {
+ #
+ # $1 is a audio file. We want to burn it as
+ # audio cd.
+ #
+  filetype=${1##*.}
+
+  checkTempDir
+ 
+  # Copy the file to our tempdir
+  cp "$1" "$tempdir"
+  cd "$tempdir"
+ 
+  # Replace spaces with underscores
+  for i in *; do mv "$i" `echo $i | tr ' ' '_'` &>/dev/null; done
+ 
+  if [ $filetype != "wav" ]; then
+    statusOutput "Converting $filetype to wav..."
+  fi	  
+ 
+  # If we don't have wav, convert the file accordingly
+  case $filetype in
+   "mp3") $mpg123 -r44100 --stereo -w "$tempdir/temp.wav" "$1" 2>/dev/null; rm "$tempdir"/*.mp3;;
+   "ogg") ogg123 --device=wav $1 2>/dev/null; mv output.wav "$tempdir/temp.wav"; rm "$tempdir"/*.ogg;;
+  esac
+  
+  # Finally start burn process
+  statusOutput "Burning $tempdir/${i%.*}.wav as Audiocd..."
+  statusOutput "---"
+  statusOutput "${C_CYAN}$cdrecord $burnproof -v speed=$speed dev=$device $pad -audio \"$tempdir\"/${i%.*}.wav"
+  $cdrecord $burnproof -v speed=$speed dev=$device $pad -audio "$tempdir"/${i%.*}.wav|tee $logfile
+  ejectCd
+ 
+  quit
+
+}
+
+function handleParam {
+ #
+ # Find out whether a param is a file (iso, audio
+ # or anything else that needs to be encapsulated in an iso),
+ # or a directory containing either data or
+ # audio files (and which type of them)
+ #
+
+ # we have only one given parameter
+ if [ -e "$1" ]; then
+   # first of all, check if this is a relative or absolute path.
+   # if relative, make an absolute out of it.
+   if [ ${1:0:1} != "/" ]; then
+      a="`pwd`/$1"
+   else
+      a="$1"
+   fi
+   if [ -f "$a" ]; then
+    # It's a regular file.
+    statusOutput "Burning file: $a"
+    burnFile "$a"
+    quit
+   else if [ -d "$a" ]; then
+    # It's a directory.
+    statusOutput "Checking content for directory: $a"
+    burnDir "$a"
+    quit
+   else
+    statusOutput "+++ What did you give me? $a is no directory and no file!"
+    quit 1
+   fi; fi
+ # we have more than one given parameter
+ else
+  burnMultipleFiles "$*"
+ fi
+}
+
+function burnMultipleFiles {
+ #
+ # $* are >1 given files and/or directories
+ # Copy to a temporary directory and call burnDir 
+ #
+ statusOutput "Copying files to temporary directory..."
+ checkTempDir
+ statusOutput "${C_CYAN}$(echo cp -R $* \"$tempdir2\"|tr '\n' ' ')"
+ cp -R $* "$tempdir2"
+ burnDir "$tempdir2"
+}
+
+function copyCd {
+ #
+ # diplay a menu: data or audio cd?
+ # then grab & burn it
+ #
+
+ # check for given sub-param
+ if [ "$1" = "data" ] || [ "$1" = "datacd" ]; then copyDataCd; quit; fi
+ if [ "$1" = "audio" ] || [ "$1" = "audiocd" ]; then copyAudioCd; quit; fi
+
+ # else display selection menu
+ $dialog --backtitle "$backtitle" \
+         --menu "What kind of cd do you wish to copy:" $dialogcols $dialogrows 2 \
+         1 "Data Cd" \
+         2 "Audio Cd" 2>$tempfile1
+ c=$(cat $tempfile1)
+ rm $tempfile1
+
+ if [ -z $c ]; then
+    statusOutput "+++ So you don't want to blank a medium after all." 
+    quit 1
+ else
+    case $c in
+    1)copyDataCd;;
+    2)copyAudioCd;;
+    esac
+ fi
+}
+
+function copyDataCd {
+ #
+ # copy a data cd
+ #
+ checkTempDir
+ statusOutput "Copying data cd..."
+
+ # get correct blocksize and blockcount
+ blocksize=`isoinfo -d -i $device | grep "^Logical block size is:" | cut -d " " -f 5 | tail -1`
+ if [ "$blocksize" = "" ]; then
+    statusOutput "+++ Error: Could not retrieve cd blocksize. Aborting."
+    quit
+ fi
+ blockcount=`isoinfo -d -i $device | grep "^Volume size is:" | cut -d " " -f 4|tail -1`
+ if [ "$blockcount" = "" ]; then
+    statusOutput "+++ Error: Could not retrieve cd blockcount. Aborting."
+    quit
+ fi
+ statusOutput "Blocksize: $blocksize"
+ statusOutput "Blockcount: $blockcount"
+ ddcommand="dd if=$cdrom of=$tempdir/out.iso bs=$blocksize count=$blockcount conv=notrunc,noerror"
+ statusOutput "${C_CYAN}$ddcommand"
+ $ddcommand
+
+ statusOutput "Burning $tempdir/out.iso (temporary cd image)..."
+ statusOutput "---"
+ statusOutput "${C_CYAN}$cdrecord $burnproof -v speed=$speed dev=$device \"$tempdir\"/out.iso"
+ $cdrecord $burnproof -v speed=$speed dev=$device "$tempdir"/out.iso|tee $logfile
+ ejectCd
+
+ quit
+
+}
+
+function copyAudioCd {
+ #
+ # copy an audio cd
+ #
+ checkTempDir
+ cd "$tempdir"
+ statusOutput "Copying audio cd..."
+ statusOutput "${C_CYAN}cdda2wav -D $cdrom -B"
+ cdda2wav -D $cdrom -B
+
+ # replace spaces in names with underscores
+ for i in *; do mv "$i" `echo $i | tr ' ' '_'` &>/dev/null; done
+
+ # and burn
+ statusOutput "Burning $tempdir/*.wav (temporary audio files)..."
+ statusOutput "---"
+ statusOutput "${C_CYAN}$cdrecord $burnproof -v speed=$speed dev=$device -pad -audio \"$tempdir\"/*.wav"
+ $cdrecord $burnproof -v speed=$speed dev=$device -pad -audio "$tempdir"/*.wav|tee $logfile
+ ejectCd
+
+ quit
+ 
+}
+
+function blankCd {
+ #
+ # display a menu: fast or complete blank?
+ # then blank the medium accordingly
+ #
+
+ # check for given sub-param
+ if [ "$1" = "fast" ]; then blankFast; quit; fi
+ if [ "$1" = "complete" ] || [ "$1" = "all" ]; then blankComplete; quit; fi
+
+ # else display selection menu
+ $dialog --backtitle "$backtitle" \
+         --menu "How do you wish to blank the medium:" $dialogcols $dialogrows 2 \
+         1 "Fast (recommended)" \
+         2 "Complete" 2>$tempfile1
+ c=$(cat $tempfile1)
+ rm $tempfile1
+
+ if [ -z $c ]; then
+    statusOutput "+++ So you don't want to blank a medium after all." 
+    quit 1
+ else
+    case $c in
+    1)blankFast;;
+    2)blankComplete;;
+    esac
+ fi
+}
+
+function blankFast {
+ #
+ # blank a medium fast
+ #
+ statusOutput "Blanking medium fast..."
+ statusOutput "---"
+ statusOutput "${C_CYAN}$cdrecord -v speed=$speed dev=$device blank=fast"
+ $cdrecord -v speed=$speed dev=$device blank=fast|tee $logfile
+ ejectCd
+
+ quit
+}
+
+function blankComplete {
+ #
+ # blank a medium complete
+ #
+ statusOutput "Blanking medium complete. This may take a while."
+ statusOutput "---"
+ statusOutput "${C_CYAN}$cdrecord -v speed=$speed dev=$device blank=all"
+ $cdrecord -v speed=$speed dev=$device blank=all|tee $logfile
+ ejectCd
+
+ quit
+}
+
+function grabCd {
+ #
+ # display a menu: data or audio cd?
+ # then grab it
+ #
+
+ # check for given sub-param
+ if [ "$1" = "data" ] || [ "$1" = "datacd" ]; then grabDataCd; quit; fi
+ if [ "$1" = "audio" ] || [ "$1" = "audiocd" ]; then grabAudioCd; quit; fi
+
+ # else display a selection menu
+ $dialog --backtitle "$backtitle" \
+         --menu "Which type of Cd do you wish to grab:" $dialogcols $dialogrows 2 \
+         1 "Audio Cd" \
+         2 "Data Cd" 2>$tempfile1
+ c=$(cat $tempfile1)
+ rm $tempfile1
+
+ if [ -z $c ]; then
+    statusOutput "+++ So you don't want to grab a cd after all." 
+    quit 1
+ else
+    case $c in
+    1)grabAudioCd;;
+    2)grabDataCd;;
+    esac
+ fi
+
+}
+
+function grabAudioCd {
+ #
+ # grab an audio cd
+ #
+ statusOutput "Grabbing audio Cd..."
+ checkTempDir
+
+ # start things for cddb name retrieval
+ statusOutput "Getting cddb info..."
+ cda -batch -dev $cdrom on
+ cda -batch -dev $cdrom toc > $tempfile1
+ cda -batch -dev $cdrom off
+
+ IFS=$'\n'
+ # now format the toc
+ cat "$tempfile1" | tr A-Z a-z | sed \
+    -e 's/\//-/g' -e "/^$/d" -e 's/ - /-/g' -e 's/ -- /-/g' -e "s/'//g" \
+    -e 's/*//g' -e 's/,//g' -e 's/\.//g' -e 's/\&/and/g' -e 's/\+/and/g' -e 's/://g' \
+    -e 's/§//g' -e 's/_*-_*/ - /g' -e "s/\?//g" -e "s/^\ *//" -e 's/_/ /g' \
+    -e 's/^_*//g' -e 's/_*$//' | head -n 2 | tail -n 1 > $tempfile2
+ albumname="$(cat $tempfile2)"
+ cat "$tempfile1" | cut -d " " -f5- | tr A-Z a-z | sed \
+    -e 's/\//-/g' -e "/^$/d" -e 's/ - /-/g' -e 's/ -- /-/g' -e "s/'//g" \
+    -e 's/*//g' -e 's/,//g' -e 's/\.//g' -e 's/\&/and/g' -e 's/\+/and/g' -e 's/://g' \
+    -e 's/§//g' -e 's/_*-_*/ - /g' -e "s/\?//g" -e "s/^\ *//" -e 's/_/ /g' \
+    -e 's/^_*//g' -e 's/_*$//' > $tempfile2
+ songlist="$(cat $tempfile2 |tail -n $[ $(wc -l $tempfile2|awk '{ print $1 }') - 1])"
+
+ if [ "$albumname" = "" -o "$albumname" = "(unknown disc title)" ]; then
+    # albumtitle retrieval failed
+    albumname="untitled album"
+ fi
+
+ # for some reasons, the output of cda/cddb request produces a strange blank line
+ # when retrieving information about soundtracks and compilations. fix this if so.
+ # we just remove the first, blank, line.
+ if [ "`cat $tempfile2|head -n 1`" = "" ] && [ "`cat $tempfile2|head -n 1|tail -n 1`" != "" ]; then
+    cat $tempfile2|tail -n $[ $(wc -l $tempfile2|awk '{ print $1 }') - 1] > $tempfile2
+ fi
+
+ if [ "`cat $tempfile2|head -n 1`" = "" ]; then
+    # songlist retrieval failed
+    echo "untitled" > $tempfile2
+    for (( x=1; x<49; x++ )); do
+        echo "untitled" >> $tempfile2
+    done
+ fi
+
+ # begin ripping
+ mkdir -p "$ripoutput/$albumname"
+ statusOutput "${C_CYAN}mkdir -p \"$ripoutput/$albumname\" "
+ cd "$tempdir"
+
+ # grab tracks
+ statusOutput "${C_CYAN}cdda2wav -D $cdrom -B"
+ cdda2wav -D $cdrom -B
+ 
+ # rm .inf files
+ if [ ! -z "`ls -1|grep -i inf`" ]; then
+    rm *.inf
+ fi
+
+ # encode tracks
+ case $format in
+  "mp3")
+    for i in *.wav; do
+        statusOutput "${C_CYAN}lame $lameopts \"$i\" \"$i.mp3\""
+        lame $lameopts "$i" "$i.mp3"
+        rm "$i"
+    done;;
+  "ogg")
+    for i in *.wav; do
+        statusOutput "${C_CYAN}oggenc $oggencopts \"$i\""
+        oggenc $oggencopts "$i"
+        rm "$i"
+    done;;
+  *) statusOutput "Chosen format: $format - I'm not going to encode any files.";;
+ esac
+
+ # rename & move tracks
+ a=0
+ for i in *; do
+    a=$[$a+1]
+     ordernum=""
+     if (($a > 9)); then 
+        ordernum="$a"
+     else
+        ordernum="0$a"
+     fi
+    statusOutput "${C_CYAN}mv \"$i\" \"$ripoutput/$albumname/$ordernum - `cat $tempfile2|head -n $[$a + 1]|tail -n 1`.$format\" "
+    mv "$i" "$ripoutput/$albumname/$ordernum - `cat $tempfile2|head -n $[$a + 1]|tail -n 1`.$format"
+    chown -R $owner "$ripoutput/$albumname"
+  done
+
+  quit
+}
+
+function grabDataCd {
+ #
+ # grab a data cd
+ #
+ $dialog --backtitle "$backtitle" \
+         --menu "Grab data cd as..." $dialogcols $dialogrows 2 \
+         1 "Iso Image" \
+         2 "Directory" 2>$tempfile1
+ c=$(cat $tempfile1)
+ rm $tempfile1
+
+ if [ -z $c ]; then
+   statusOutput "+++ So you don't want to burn $1 after all." 
+   quit 1
+ else
+   case $c in
+   1)grabIsoImage;;
+   2)grabDirectory;;
+   esac
+ fi
+}
+
+function grabIsoImage {
+ #
+ # grab the cd as iso image
+ #
+ statusOutput "Grab cd as iso image ($ripoutput/out.iso)"
+
+ # get correct blocksize and blockcount
+ blocksize=`isoinfo -d -i $device | grep "^Logical block size is:" | cut -d " " -f 5 | tail -1`
+ if [ "$blocksize" = "" ]; then
+    statusOutput "+++ Error: Could not retrieve cd blocksize. Aborting."
+    quit
+ fi
+ blockcount=`isoinfo -d -i $device | grep "^Volume size is:" | cut -d " " -f 4|tail -1`
+ if [ "$blockcount" = "" ]; then
+    statusOutput "+++ Error: Could not retrieve cd blockcount. Aborting."
+    quit
+ fi
+ statusOutput "Blocksize: $blocksize"
+ statusOutput "Blockcount: $blockcount"
+ statusOutput "${C_CYAN}dd if=$cdrom of=\"$ripoutput\"/out.iso bs=$blocksize count=$blockcount conv=notrunc,noerror"
+ dd if=$cdrom of="$ripoutput"/out.iso bs=$blocksize count=$blockcount conv=notrunc,noerror
+
+ chown $owner "$ripoutput"/out.iso
+
+ quit
+}
+
+function grabDirectory {
+ #
+ # grab the cd as directory
+ #
+ checkTempDir
+ statusOutput "Grab cd as directory ($ripoutput/cd.grabbed)"
+ mkdir "$tempdir/mount"
+ mount -t iso9660 $cdrom "$tempdir/mount"
+ statusOutput "${C_CYAN}cp -R \"$tempdir/mount\" \"$ripoutput\"/cd.grabbed"
+ cp -R "$tempdir/mount" "$ripoutput"/cd.grabbed
+ chown -R $owner "$ripoutput"/cd.grabbed
+ umount "$tempdir/mount"
+
+ quit
+}
+
+function ejectCd {
+ #
+ # if autoeject=yes, eject the recorder
+ #
+ if [ "$autoeject" = "yes" ] || [ "$autoeject" = "1" ] || [ "$autoeject" = "true" ]; then
+  statusOutput "${C_CYAN}eject $recorder"
+  eject "$recorder"
+ fi
+}
+
+#######################################
+# Main Program
+#######################################
+
+# check commandline
+# this is elemental
+if [ $# -eq 0 ]; then
+ displayHelp
+fi
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ] || [ "$1" = "help" ]; then
+ displayHelp
+fi
+
+# check for lockfile
+if [ -e $lockfile ]; then
+    statusOutput "+++ It seems that $me is already running!"
+    statusOutput "+++ If this is not the case, then please delete $lockfile."
+    statusOutput "+++ (Note: if you delete this file while $me is still running,"
+    statusOutput "+++ you may cause a loss of data.)"
+    exit
+fi
+
+cont="true"
+ 
+# Check for config files
+if [ -e "$HOME/.texburnrc" ]; then
+ configfile="$HOME/.texburnrc"
+else if [ -e "./texburnrc" ]; then
+ configfile="./texburnrc"
+else if [ -e "/etc/texburnrc" ]; then
+ configfile="/etc/texburnrc"
+else
+ statusOutput "+++ No Configfile found."
+ statusOutput "+++ Please make it available in $HOME, /etc, or the application path."
+ statusOutput "+++ See manpage on how to create your own config file."
+ quit 1
+fi; fi; fi
+
+
+# read config file
+IFS=$'\n'
+for line in `grep -v "^#" $configfile|grep -v '^$'`; do
+ option="$(echo ${line}|sed 's/.*=//g')"
+ cfgtoken="$(echo ${line}|sed 's/=.*//g')"
+ #statusOutput "+++ CFG: ${line}     TOKEN: $cfgtoken   OPTION: $option " 
+ case "$cfgtoken" in
+  "cdrecord")
+    cdrecord="$option";;
+  "device")
+    device="$option";;
+  "recorder")
+    recorder="$option";;
+  "speed")
+    speed="$option";;
+  "cdrom")
+    cdrom="$option";;
+  "tempdir")
+    tempdir="${option%% }";;
+  "tempdir2")
+    tempdir2="$option";;
+  "ripoutput")
+    ripoutput="${option%% }";;
+  "format")
+    format="$option";;
+  "lameopts")
+    lameopts="$option";;
+  "oggencopts")
+    oggencopts="$option";;
+  "owner")
+    owner="$option";;
+  "pad")
+    pad="$option";;
+  "forcetools")
+    statusOutput "+++ Deprecated config option: forcetools \
+  (see manpage for details)";;
+  "burnproof")
+    burnproof="$option";;
+  "inlay")
+    inlay="$option";;
+  "cdrdaoopts")
+    cdrdaoopts="$option";;
+  "autoeject")
+    autoeject="$options";;
+  *)
+    statusOutput "Unknown configuration option: $cfgtoken";;
+ esac
+ i=$[$i+1]
+done 
+
+# check for pad or dao
+if [ "$pad" = "yes" ] || [ "$pad" = "1" ] || [ "$pad" = "true" ]; then
+    pad="-pad"
+else
+    pad="-dao"
+fi
+
+# check for burnproof
+if [ "$burnproof" = "yes" ] || [ "$burnproof" = "1" ] || [ "$burnproof" = "true" ]; then
+    burnproof="driveropts=burnfree"
+else
+    burnproof="driveropts=noburnfree"
+fi
+ 
+# check if we are root
+checkIdentity
+
+# check for needed tools
+checkTools
+
+# check for lockfile
+checkLockFile
+
+# Process Parameters
+while ( true )
+do
+
+ case $1 in
+  -h | --help | help) displayHelp;;
+  -v | --version | version) displayVersion;;
+  copy) if [ "$2" != "" ]; then copyCd "$2" else copyCd; fi;;
+  grab) if [ "$2" != "" ]; then grabCd "$2" else grabCd; fi;;
+  blank) if [ "$2" != "" ]; then blankCd "$2" else blankCd; fi;;
+  *) if [ ! -e "$1" ]; then
+         statusOutput "+++ Invalid parameter. Please use $0 help for instructions."
+         quit 1
+     else
+         trap 'signalHandler' TERM INT
+        #statusOutput "+++ handleparam $*"
+        #sleep 3
+         handleParam "$*"
+     fi;;
+ esac
+                                                                     
+ if [ $# -eq 0 ]; then
+  break
+ fi
+done
+
+quit
+

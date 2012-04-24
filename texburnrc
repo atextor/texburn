@@ -1,0 +1,26 @@
+########################
+# texburnrc
+########################
+
+# cd recording
+device=0,0,0 
+recorder=/dev/scd1
+speed=4 
+cdrom=/dev/cdrom 
+pad=yes
+burnproof=no
+cdrdaoopts=--driver generic-mmc
+autoeject=yes
+
+# directories
+tempdir=/tmp/texburntemp 
+ripoutput=/home/tex
+
+# cd ripping
+format=ogg
+lameopts=-b 192
+oggencopts=-B 16 -R 44100 -b 192
+owner=none.none
+
+# misc
+inlay=ask
